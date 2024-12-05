@@ -49,7 +49,72 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.tree import export_text
+from sklearn.tree import plot_tree
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import classification_report
+from sklearn.metrics import mean_squared_error as MSE
+from sklearn.metrics import recall_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay
+from sklearn.ensemble import BaggingClassifier
+from sklearn.ensemble import AdaBoostClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
 from matplotlib.gridspec import GridSpec
+import pingouin
+
+
+#%% Definindo Funções
+
+def verification( predito, test):
+    """
+    Avalia o desempenho de um modelo de classificação e exibe resultados relevantes.
+
+    Esta função realiza as seguintes tarefas:
+    1. Gera e exibe uma matriz de confusão utilizando o conjunto de valores 
+    verdadeiros (`test`) e previstos (`predito`).
+    2. Calcula métricas de desempenho do modelo, incluindo:
+        - Acurácia (Accuracy): Proporção de predições corretas em relação ao total.
+        - Sensibilidade (Recall): Proporção de casos positivos corretamente identificados.
+        - Precisão (Precision): Proporção de predições positivas que são verdadeiramente corretas.
+
+    Parâmetros:
+    ----------
+    predito : array-like
+        Valores previstos pelo modelo de classificação.
+
+    test : array-like
+        Valores verdadeiros do conjunto de teste.
+
+    Retornos:
+    ---------
+    None
+        Os resultados são exibidos diretamente via `print` e a matriz de confusão é exibida em 
+        um gráfico.
+    """
+    conf_matrix = confusion_matrix(test, predito)
+    disp = ConfusionMatrixDisplay(confusion_matrix=conf_matrix)
+    disp.plot(cmap="viridis")
+
+    acc = accuracy_score(predito, test)
+
+    recall = recall_score(test, predito)
+
+    precision = precision_score(test, predito, pos_label=1)
+
+    print(f"""
+    Resultados da Avaliação do Modelo:
+
+    - Acurácia (Accuracy): {acc:.2f}
+
+    - Sensibilidade (Recall): {recall:.2f}
+
+    - Precisão (Precision): {precision:.2f}""")
 
 #%% Importação dos dados
 plantas_ori = pd.read_csv( "BASE\\plant_growth_data.csv")
@@ -78,8 +143,6 @@ plantas_ori.value_counts( "Soil_Type", normalize=True)
 
 plantas_ori.value_counts( "Growth_Milestone", normalize=True)
 
-print( plantas_ori.dtypes )
-
 #%% Alteração do nome das Colunas.
 
 new_columms = ["SOLO", "HORA_SOL", "FREQ_AGUA", "TIP_FTL", "TEMPE", "HUMID", "CRESC"]
@@ -95,6 +158,9 @@ str_numeric = ["SOLO", "TIP_FTL", "FREQ_AGUA"]
 
 #%% Análises descritivas.
 
+# Número de bins para o histograma
+k = int(2*(len(df_plantas)**(1/3)))
+
 # Análises das Horas de Sol.
 
 ## Descritivos
@@ -102,7 +168,7 @@ str_numeric = ["SOLO", "TIP_FTL", "FREQ_AGUA"]
 df_plantas["HORA_SOL"].describe()
 
 ## Histograma
-sns.histplot( data = df_plantas, x = "HORA_SOL", bins = 20)
+sns.histplot( data = df_plantas, x = "HORA_SOL", bins = k)
 
 ## Box-plot
 fig = plt.figure(figsize=(20, 10))
@@ -132,13 +198,37 @@ sns.kdeplot( data = df_plantas, x = "HORA_SOL", hue = "TIP_FTL", ax = ax6)
 ax7 = fig.add_subplot(gs[2, 2])  # Linha 1, coluna 0
 sns.kdeplot( data = df_plantas, x = "HORA_SOL", hue = "FREQ_AGUA", ax = ax7)
 
+anova_hora_solo = pingouin.anova( data = df_plantas,\
+    dv = "HORA_SOL", between ="SOLO" )
+
+print(anova_hora_solo)
+anova_hora_ftl = pingouin.anova( data = df_plantas,\
+    dv = "HORA_SOL", between ="TIP_FTL" )
+
+print(anova_hora_ftl)
+
+anova_hora_freq = pingouin.anova( data = df_plantas,\
+    dv = "HORA_SOL", between ="FREQ_AGUA" )
+
+print(anova_hora_freq)
+
+# Anova entre as categorias do solo
+pairwise_results = pingouin.pairwise_tests(data=df_plantas,
+    dv="HORA_SOL",
+    between="SOLO",
+    padjust="bonf")
+
+# Print pairwise_results
+print(pairwise_results)
+
+
 # Análises da Temperatura.
 
 ## Descritivo
 df_plantas["TEMPE"].describe()
 
 ## Histograma
-sns.histplot( data = df_plantas, x = "TEMPE", bins = 20)
+sns.histplot( data = df_plantas, x = "TEMPE", bins = k)
 
 ## Box-Plot
 fig = plt.figure(figsize=(20, 10))
@@ -169,6 +259,21 @@ ax7 = fig.add_subplot(gs[2, 2])  # Linha 1, coluna 0
 sns.kdeplot( data = df_plantas, x = "TEMPE", hue = "FREQ_AGUA", ax = ax7)
 
 # Fazer Anova para a temperatura em fertilizantes e frequencia de hidratação
+anova_tempe_freq = pingouin.anova( data = df_plantas,\
+    dv = "TEMPE", between ="FREQ_AGUA" )
+
+print(anova_tempe_freq)
+
+anova_tempe_ftl = pingouin.anova( data = df_plantas,\
+    dv = "TEMPE", between ="TIP_FTL" )
+
+print(anova_tempe_ftl)
+
+anova_tempe_solo = pingouin.anova( data = df_plantas,\
+    dv = "TEMPE", between ="SOLO" )
+
+print(anova_tempe_solo)
+# Não há diferença entre a temperatura pela frequência de água.
 
 # Análises da Humidade.
 
@@ -176,7 +281,7 @@ sns.kdeplot( data = df_plantas, x = "TEMPE", hue = "FREQ_AGUA", ax = ax7)
 df_plantas["HUMID"].describe()
 
 ## Histograma
-sns.histplot( data = df_plantas, x = "HUMID", bins = 15)
+sns.histplot( data = df_plantas, x = "HUMID", bins = k)
 
 ## Box-plot
 fig = plt.figure(figsize=(20, 10))
@@ -208,6 +313,21 @@ sns.kdeplot( data = df_plantas, x = "HUMID", hue = "FREQ_AGUA", ax = ax7)
 
 # Fazer ANOVA para humidade e Solo
 
+anova_humid_solo = pingouin.anova( data = df_plantas,\
+    dv = "HUMID", between ="SOLO" )
+
+print(anova_humid_solo)
+
+anova_humid_ftl = pingouin.anova( data = df_plantas,\
+    dv = "HUMID", between ="TIP_FTL" )
+
+print(anova_humid_ftl)
+
+anova_humid_freq = pingouin.anova( data = df_plantas,\
+    dv = "HUMID", between ="FREQ_AGUA" )
+
+print(anova_humid_freq)
+
 #%%Correlações.
 
 sns.pairplot( data = df_plantas[["TEMPE", "HUMID", "HORA_SOL"]])
@@ -215,16 +335,32 @@ sns.pairplot( data = df_plantas[["TEMPE", "HUMID", "HORA_SOL"]])
 # não há relação.
 
 # Correlação de Pearson
-df_plantas = pd.get_dummies(df_plantas, columns=['SOLO'], prefix='SOLO', drop_first=False)
-df_plantas = pd.get_dummies(df_plantas, columns=['FREQ_AGUA'], prefix='FREQ', drop_first=False)
-df_plantas = pd.get_dummies(df_plantas, columns=['TIP_FTL'], prefix='FTL', drop_first=False)
-
+df_plantas = pd.get_dummies(df_plantas, columns=['SOLO'], prefix='SOLO')
+df_plantas = pd.get_dummies(df_plantas, columns=['FREQ_AGUA'], prefix='FREQ')
+df_plantas = pd.get_dummies(df_plantas, columns=['TIP_FTL'], prefix='FTL')
 
 col_corres = [ col for col in df_plantas.columns if col not in str_numeric]
 
 corr = df_plantas[col_corres].corr()
 mask = np.triu(np.ones_like(corr))
-sns.heatmap(corr,annot = True, cmap="YlOrBr")
+
+plt.figure(figsize=(12, 8))
+
+# Plotando o heatmap com melhorias
+sns.heatmap(corr, annot=True, cmap="mako", mask = mask, annot_kws={"size": 10})
+
+# Ajustando rotação dos rótulos
+plt.xticks(rotation=45, ha='right')
+plt.yticks(rotation=0)
+
+# Título e rótulos
+plt.title("Matriz de Correlação de Spearman", fontsize=16)
+plt.xlabel("Variáveis", fontsize=12)
+plt.ylabel("Variáveis", fontsize=12)
+
+plt.tight_layout()  # Ajuste automático dos elementos
+plt.show()
+
 # Aplicando a matriz de correlação utilizando a correlação de Pearson,
 # é perceptível verificar que não há uma correlação linear forte entre as
 # variáveis numéricas.
@@ -232,7 +368,26 @@ sns.heatmap(corr,annot = True, cmap="YlOrBr")
 # Correlação de Spearman.
 corr_spe = df_plantas[col_corres].corr(method='spearman')
 mask_spe = np.triu(np.ones_like(corr_spe))
-sns.heatmap(corr_spe,annot = True, cmap="YlOrBr", mask=mask_spe)
+
+corr = df_plantas[col_corres].corr()
+mask = np.triu(np.ones_like(corr))
+
+plt.figure(figsize=(12, 8))
+
+# Plotando o heatmap com melhorias
+sns.heatmap(corr_spe, annot=True, cmap="mako", mask = mask_spe, annot_kws={"size": 10})
+
+# Ajustando rotação dos rótulos
+plt.xticks(rotation=45, ha='right')
+plt.yticks(rotation=0)
+
+# Título e rótulos
+plt.title("Matriz de Correlação de Spearman", fontsize=16)
+plt.xlabel("Variáveis", fontsize=12)
+plt.ylabel("Variáveis", fontsize=12)
+
+plt.tight_layout()  # Ajuste automático dos elementos
+plt.show()
 
 # Aplicando a matriz de correlação utilizando a correlação de Spearman,
 # é perceptível verificar que não há uma correlação forte entre as
@@ -253,63 +408,158 @@ sns.kdeplot( data = df_plantas, x = "TEMPE", hue = "CRESC",  ax=ax[2,0 ])
 sns.kdeplot( data = df_plantas, x = "HORA_SOL", hue = "CRESC", ax=ax[2,1 ])
 sns.kdeplot( data = df_plantas, x = "HUMID", hue = "CRESC", ax=ax[2,2 ])
 
+anova_tempe_cresc = pingouin.anova( data = df_plantas,\
+    dv = "TEMPE", between ="CRESC" )
+
+print(anova_tempe_cresc)
+
+anova_hora_cresc = pingouin.anova( data = df_plantas,\
+    dv = "HORA_SOL", between ="CRESC" )
+
+print(anova_hora_cresc)
+
+anova_humid_cresc = pingouin.anova( data = df_plantas,\
+    dv = "HUMID", between ="CRESC" )
+
+print(anova_humid_cresc)
+
 # Fazer ANOVAs para a relação das variáveis quantitativas e crescimento.
 
+#%% Criação da Arvore de Descisão
+
+# Separando Treinamento e teste
+
+SEED = 46
+
+df_resul_ori = df_plantas[["CRESC"]]
+
+df_data_ori = df_plantas.drop("CRESC", axis = 1)
+
+X_train, X_test, y_train, y_test = train_test_split(df_data_ori, df_resul_ori, \
+    test_size=0.3, random_state=SEED)
+
+#Criação da primeira arvore
+
+dt = DecisionTreeClassifier(max_depth=12, random_state=SEED, criterion='entropy')
+
+dt.fit(X_train, y_train)
+
+y_pred = dt.predict(X_test)
+
+verification( predito = y_pred, test = y_test)
+
+print(classification_report(y_test, y_pred))
+
+# Visualizar a árvore como gráfico
+plt.figure(figsize=(20, 10))
+plot_tree(dt,  filled=True, feature_names = X_train.columns)
+plt.show()
+
+#%% Utilizando o Baging
+
+dt_one = DecisionTreeClassifier( random_state='SEED')
+bc = BaggingClassifier(estimator=dt_one, n_estimators=500, random_state=SEED, oob_score=True)
+bc.fit(X_train, y_train)
+
+y_pred_bag = bc.predict(X_test)
+
+verification(y_pred_bag, y_test)
+
+print(classification_report(y_test, y_pred_bag))
+
+#%% Random Forest
+
+#Hiperparametros
+params_rf = {"n_estimators":[ 8, 10 , 12 , 25, 50, 100,350,500],
+    "max_features":["log2", "auto", "sqrt"],
+    "min_samples_leaf":[2, 8,   10, 20, 30 ],
+    "criterion": ["gini", "entropy", "log_loss" ],
+    "max_depth": [None, 4, 8, 12, 20, 30]}
 
 
+rf = RandomForestClassifier(random_state=SEED)
 
+# Instantiate grid_rf
+grid_rf = GridSearchCV(estimator=rf,
+                    param_grid=params_rf,
+                    scoring='neg_mean_squared_error',
+                    cv=3,
+                    verbose=1,
+                    n_jobs=-1)
 
+grid_rf.fit( X_train, y_train )
 
+best_model = grid_rf.best_estimator_
 
+# Predict test set labels
+y_pred_forest = best_model.predict( X_test)
 
+verification(predito = y_pred_forest, test = y_test )
 
+print(classification_report(y_test, y_pred_forest))
 
+#%% Análise de importância
 
+feature_importances = best_model.feature_importances_
 
+# Criar um DataFrame para visualização
+importance_df = pd.DataFrame({
+    'Feature': X_train.columns,
+    'Importance': feature_importances
+}).sort_values(by='Importance', ascending=False).reset_index(drop = True)
 
+importance_df['Cumulative Importance'] = importance_df['Importance'].cumsum()
 
+#%% Gráfico de Linha.
+# Configuração do tamanho do gráfico
+plt.figure(figsize=(12, 6))
 
+# Criar o gráfico de linha
+plt.plot(importance_df['Feature'], importance_df['Importance'], marker='o', color='dodgerblue',
+        linestyle='-', linewidth=2, markersize=8, label='Importância')
 
+# Adicionar rótulos de valores diretamente nos pontos
+for x, y in zip(importance_df['Feature'], importance_df['Importance']):
+    plt.text(x, y, f'{y:.2f}', fontsize=9, ha='center', va='bottom', color='black')
 
+# Configurar rótulos e título
+plt.xlabel('Variáveis', fontsize=12)
+plt.ylabel('Importância', fontsize=12)
+plt.title('Importância das Variáveis', fontsize=14, weight='bold')
 
+# Melhorar a legibilidade do eixo X
+plt.xticks(rotation=45, ha='right', fontsize=10)
 
+# Adicionar uma grade para melhorar a leitura
+plt.grid(axis='y', linestyle='--', alpha=0.7)
 
+# Adicionar uma legenda
+plt.legend(loc='upper right', fontsize=10)
 
+# Ajustar layout
+plt.tight_layout()
 
+# Exibir o gráfico
+plt.show()
 
+#%% Gráfico de barras
+# Criar o gráfico com Seaborn
+plt.figure(figsize=(10, 6))
+sns.barplot(
+    x='Importance',
+    y='Feature',
+    data=importance_df,
+    palette='mako'
+)
 
+# Adicionar rótulos e título
+plt.xlabel('Importância', fontsize=12)
+plt.ylabel('Variáveis', fontsize=12)
+plt.title('Importância das Variáveis', fontsize=14, weight='bold')
 
+# Adicionar valores no final das barras
+for index, value in enumerate(importance_df['Importance']):
+    plt.text(value, index, f'{value:.2f}', va='center', fontsize=10)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+plt.tight_layout()  # Ajustar o layout para evitar cortes
+plt.show()
